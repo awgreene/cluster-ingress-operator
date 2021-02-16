@@ -15,6 +15,7 @@ import (
 	certpublishercontroller "github.com/openshift/cluster-ingress-operator/pkg/operator/controller/certificate-publisher"
 	dnscontroller "github.com/openshift/cluster-ingress-operator/pkg/operator/controller/dns"
 	ingresscontroller "github.com/openshift/cluster-ingress-operator/pkg/operator/controller/ingress"
+	ingressroutescontroller "github.com/openshift/cluster-ingress-operator/pkg/operator/controller/ingress-routes"
 	statuscontroller "github.com/openshift/cluster-ingress-operator/pkg/operator/controller/status"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -87,6 +88,13 @@ func New(config operatorconfig.Config, kubeConfig *rest.Config) (*Operator, erro
 		IngressControllerImage: config.IngressControllerImage,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create ingress controller: %v", err)
+	}
+
+	// Create and register the ingress routes controller with the operator manager.
+	if _, err := ingressroutescontroller.New(mgr, ingressroutescontroller.Config{
+		SecretNamespace: "openshift-config",
+	}); err != nil {
+		return nil, fmt.Errorf("failed to create ingress routes controller: %v", err)
 	}
 
 	// Set up the status controller.

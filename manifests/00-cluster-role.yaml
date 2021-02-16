@@ -61,6 +61,7 @@ rules:
   - list
   - watch
   - update
+  - delete
 
 - apiGroups:
   - operator.openshift.io
