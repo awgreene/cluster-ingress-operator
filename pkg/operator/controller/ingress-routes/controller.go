@@ -8,7 +8,6 @@ import (
 
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -69,6 +68,11 @@ type reconciler struct {
 	client client.Client
 }
 
+type componentRouteTuple struct {
+	Namespace string
+	Name      string
+}
+
 // Reconcile expects request to refer to a ingress in the operator namespace,
 // and will do all the work to ensure the ingress is in the desired state.
 func (r *reconciler) Reconcile(request reconcile.Request) (reconcile.Result, error) {
@@ -85,16 +89,18 @@ func (r *reconciler) Reconcile(request reconcile.Request) (reconcile.Result, err
 	}
 
 	// Generate namespaceName mapping
-	mapToSecretName := map[types.NamespacedName]string{}
+	componentRouteTupleToSecretName := map[componentRouteTuple]string{}
 	for _, componentRoute := range ingress.Spec.ComponentRoutes {
-		mapToSecretName[types.NamespacedName{Namespace: componentRoute.Namespace, Name: componentRoute.Name}] = componentRoute.ServingCertKeyPairSecret.Name
+		tuple := componentRouteTuple{Namespace: componentRoute.Namespace, Name: componentRoute.Name}
+		componentRouteTupleToSecretName[tuple] = componentRoute.ServingCertKeyPairSecret.Name
 	}
 
 	// For each Status.ComponentRoute resource, if a Spec.ComponentRoute with a matching
-	// namespace.name touple exists create the role and roleBinding for each consumer users.
+	// namespace.name tuple exists create the role and roleBinding for each consumer users.
 	// If no matching Spec.ComponentRoute exists, make sure any RBAC that was generated is removed.
 	for _, componentRoute := range ingress.Status.ComponentRoutes {
-		secretName, ok := mapToSecretName[types.NamespacedName{Namespace: componentRoute.Namespace, Name: componentRoute.Name}]
+		tuple := componentRouteTuple{Namespace: componentRoute.Namespace, Name: componentRoute.Name}
+		secretName, ok := componentRouteTupleToSecretName[tuple]
 
 		// Delete the generated role and roleBinding if they exists for a component not defined in the spec.
 		if !ok {
@@ -126,18 +132,10 @@ func (r *reconciler) ensureServiceCertKeyPairSecretRole(owner metav1.Object, crN
 			// TODO: Generate Name and add labels to avoid componentRoute.Name collisions.
 			Name:      crName,
 			Namespace: r.config.SecretNamespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "config.openshift.io/v1",
-					Kind:       "Ingress",
-					Name:       owner.GetName(),
-					UID:        owner.GetUID(),
-				},
-			},
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				Verbs:         []string{"get", "list"},
+				Verbs:         []string{"get", "list", "watch"},
 				APIGroups:     []string{""},
 				Resources:     []string{"secrets"},
 				ResourceNames: []string{secretName},
@@ -159,7 +157,6 @@ func (r *reconciler) ensureServiceCertKeyPairSecretRole(owner metav1.Object, crN
 		// TODO: Remove comment below once decision is made.
 		// Hard update of spec - could apply hash annotation of desired spec
 		// to role to avoid race conditions with other controllers.
-		existingRole.OwnerReferences = role.OwnerReferences
 		existingRole.Rules = role.Rules
 		return r.client.Update(context.TODO(), existingRole)
 	}
@@ -181,14 +178,6 @@ func (r *reconciler) ensureServiceCertKeyPairSecretRoleBinding(owner metav1.Obje
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      roleName,
 			Namespace: r.config.SecretNamespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "config.openshift.io/v1",
-					Kind:       "Ingress",
-					Name:       owner.GetName(),
-					UID:        owner.GetUID(),
-				},
-			},
 		},
 		Subjects: subjects,
 		RoleRef: rbacv1.RoleRef{
@@ -212,7 +201,6 @@ func (r *reconciler) ensureServiceCertKeyPairSecretRoleBinding(owner metav1.Obje
 		// TODO: Remove comment below once decision is made.
 		// Hard update of spec - could apply hash annotation of desired spec
 		// to role to avoid race conditions with other controllers.
-		existingRoleBinding.OwnerReferences = roleBinding.OwnerReferences
 		existingRoleBinding.Subjects = roleBinding.Subjects
 		existingRoleBinding.RoleRef = roleBinding.RoleRef
 		return r.client.Update(context.TODO(), existingRoleBinding)

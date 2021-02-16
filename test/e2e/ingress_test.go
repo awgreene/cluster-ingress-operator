@@ -183,7 +183,7 @@ func pollForValidComponentRouteRole(t *testing.T, componentRouteName string, com
 		}
 
 		if len(role.Rules) != 1 ||
-			len(role.Rules[0].Verbs) != 2 && role.Rules[0].Verbs[0] != "get" && role.Rules[0].Verbs[1] != "list" ||
+			len(role.Rules[0].Verbs) != 3 && role.Rules[0].Verbs[0] != "get" && role.Rules[0].Verbs[1] != "list" && role.Rules[0].Verbs[2] != "watch" ||
 			len(role.Rules[0].APIGroups) != 1 && role.Rules[0].APIGroups[0] != "" ||
 			len(role.Rules[0].Resources) != 1 && role.Rules[0].Resources[0] != "secrets" ||
 			len(role.Rules[0].ResourceNames) != 1 && role.Rules[0].ResourceNames[0] != componentRouteSecretName {
@@ -227,90 +227,4 @@ func pollForValidComponentRouteRoleBinding(t *testing.T, componentRouteName stri
 	})
 
 	return err
-}
-
-func TestIngressConfigGarbageCollection(t *testing.T) {
-	// 1. Create an ingress resource
-	ingress := &configv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "ingress-test",
-		},
-		Spec: configv1.IngressSpec{
-			ComponentRoutes: []configv1.ComponentRouteSpec{
-				{
-					Namespace: "default",
-					Name:      "foo",
-					Hostname:  "www.testing.com",
-					ServingCertKeyPairSecret: configv1.SecretNameReference{
-						Name: "foo",
-					},
-				},
-			},
-		},
-	}
-
-	if err := kclient.Create(context.TODO(), ingress); err != nil {
-		t.Fatalf("failed to create ingress resource: %v", err)
-	}
-
-	// 2. Update the status of the ingress resource to include consumers
-	ingress.Status = configv1.IngressStatus{
-		ComponentRoutes: []configv1.ComponentRouteStatus{
-			{
-				Namespace: "default",
-				Name:      "foo",
-				ConsumingUsers: []string{
-					"foo",
-				},
-			},
-		},
-	}
-	if err := kclient.Status().Update(context.TODO(), ingress); err != nil {
-		t.Fatalf("failed to get ingress resource: %v", err)
-	}
-
-	// 3. Check that the expected role and rolebinding exist
-	role := &rbacv1.Role{}
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		if err := kclient.Get(context.TODO(), types.NamespacedName{"openshift-config", "foo"}, role); err != nil {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("role not created: %v", err)
-	}
-
-	roleBinding := &rbacv1.RoleBinding{}
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		if err := kclient.Get(context.TODO(), types.NamespacedName{"openshift-config", "foo"}, roleBinding); err != nil {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("roleBidning not created: %v", err)
-	}
-
-	// 4. Delete the ingress resource
-	if err := kclient.Delete(context.TODO(), ingress); err != nil {
-		t.Fatalf("failed to create ingress resource: %v", err)
-	}
-
-	// 5. Make sure that the foo role and roleBinding are deleted
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		if err := kclient.Get(context.TODO(), types.NamespacedName{"openshift-config", "foo"}, role); err == nil || !errors.IsNotFound(err) {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("role not deleted: %v", err)
-	}
-
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
-		if err := kclient.Get(context.TODO(), types.NamespacedName{"openshift-config", "foo"}, roleBinding); err == nil || !errors.IsNotFound(err) {
-			return false, nil
-		}
-		return true, nil
-	}); err != nil {
-		t.Errorf("role not deleted: %v", err)
-	}
 }
