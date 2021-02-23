@@ -15,6 +15,12 @@ const (
 	// CA certificate in this namespace.
 	GlobalMachineSpecifiedConfigNamespace = "openshift-config-managed"
 
+	//CluseterScopedNamespace is an empty string representing a cluster scoped namespace.
+	ClusterScopedNamespace = ""
+
+	// OpenShiftConfigNamespace is the namespace for configuring OpenShift.
+	OpenShiftConfigNamespace = "openshift-config"
+
 	// ControllerDeploymentLabel identifies a deployment as an ingress controller
 	// deployment, and the value is the name of the owning ingress controller.
 	ControllerDeploymentLabel = "ingresscontroller.operator.openshift.io/deployment-ingresscontroller"
@@ -43,6 +49,14 @@ const (
 func IngressClusterOperatorName() types.NamespacedName {
 	return types.NamespacedName{
 		Name: "ingress",
+	}
+}
+
+// IngressClusterConfigName returns the namespaced name of the ingress.config.openshift.io
+// resource for the operator.
+func IngressClusterConfigName() types.NamespacedName {
+	return types.NamespacedName{
+		Name: "cluster",
 	}
 }
 
